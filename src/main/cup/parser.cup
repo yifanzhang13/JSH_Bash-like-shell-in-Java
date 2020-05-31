@@ -1,0 +1,143 @@
+package uk.ac.ucl.jsh.core.parser;
+
+
+scan with {: return lexer.next_token(); :};
+
+parser code {:
+    private Lexer lexer;
+
+    public GeneratedParser(Lexer lexer) {
+        super(lexer);
+        this.lexer = lexer;
+
+    }
+
+    private ASTNode tree = null;
+    private Boolean currentlyQuoted = false;
+
+    public ASTNode getTree(){
+        return tree;
+    }
+
+    public void syntax_error(java_cup.runtime.Symbol cur_token){
+        throw new IllegalArgumentException();
+    }
+
+:};
+
+
+terminal SEMI, PIPE;
+terminal String BACKQUOTE, ATOM, ATOMEND;
+terminal GREATER, LESSER;
+terminal SQUOTE, DQUOTE;
+
+nonterminal ASTNode root;
+nonterminal ASTNode pipe, seq, call;
+
+nonterminal ASTNode argument, argument_atom, atom, atoms;
+nonterminal ASTNode redirections, redirection;
+
+root          ::= seq:sequences
+                {: ASTNode rootNode = new ASTNode("root");
+                    rootNode.addChild(sequences);
+                    tree = rootNode;
+                :}
+                ;
+//Sequence Call
+seq           ::= seq:seq SEMI pipe:pipe
+                {:  seq.addChild(pipe);
+                    RESULT = seq;
+                :}
+                | pipe:pipe
+                {:  RESULT = new ASTNode("seq");
+                    RESULT.addChild(pipe);
+                :}
+                ;
+//Pipe Call
+pipe          ::= pipe:pipes PIPE call:call
+                {:  pipes.addChild(call);
+                    RESULT = pipes;
+                :}
+                | call:call
+                {:  RESULT = new ASTNode("pipe");
+                    RESULT.addChild(call);
+                :}
+                ;
+//Call Function
+call          ::= redirections:redirections argument:word atoms:atom_list
+                {:  ASTNode keywordNode = new ASTNode("keyword");
+                    keywordNode.addChild(word);
+                    ASTNode output = new ASTNode("call");
+                    if(redirections != null) {output.addChild(redirections);}
+                    output.addChild(keywordNode);
+                    if(atom_list != null) {output.addChild(atom_list);}
+                    RESULT = output;
+                :}
+                |//empty
+                {: RESULT = new ASTNode("call"); :}
+                ;
+redirections  ::= redirections:redirectList redirection:redirection
+                {:
+                    if(redirectList == null){
+                        redirectList = new ASTNode("redirection_list");
+                    }
+                    redirectList.addChild(redirection);
+                    RESULT = redirectList;
+                :}
+                | //Empty Reduction
+                ;
+atoms         ::= atoms:atomlist atom:atom
+                {:  if(atomlist == null){
+                        atomlist = new ASTNode("atom_list");
+                    }
+                    atomlist.addChild(atom);
+                    RESULT = atomlist;
+                    :}
+                |
+                ;
+atom          ::= redirection:redirect
+                {: RESULT = redirect;:}
+                | argument:arg
+                {: RESULT = arg;:}
+                ;
+
+redirection   ::= GREATER argument:arg
+                {:
+                    RESULT = new ASTNode("redirect");
+                    RESULT.setRedirectType("OUT");
+                    RESULT.addChild(arg);
+                :}
+                | LESSER argument:arg
+                {:  RESULT = new ASTNode("redirect");
+                    RESULT.setRedirectType("IN");
+                    RESULT.addChild(arg);
+                 :}
+                ;
+
+argument      ::=  argument_atom:arg_atom argument:arg
+                {:  if(arg_atom != null){
+                        arg.addChildFront(arg_atom);
+                    }
+                    RESULT = arg;
+                :}
+                | ATOMEND:content
+                {:  RESULT = new ASTNode("argument");
+                    if(currentlyQuoted){
+                        RESULT.setQuoted(true);
+                        currentlyQuoted = false;
+                    }
+                    RESULT.addChild(new ASTNode(content, "atom"));
+                :}
+                ;
+argument_atom ::= ATOM:content
+                {:  RESULT = new ASTNode(content, "atom");
+                 :}
+                | SQUOTE
+                {: currentlyQuoted = true; :}
+                | DQUOTE
+                {: currentlyQuoted = true; :}
+                | BACKQUOTE:content
+                {:  RESULT = new ASTNode(content, "backquote");
+                    RESULT.setQuoted(true);
+                :}
+                ;

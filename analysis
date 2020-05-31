@@ -1,0 +1,4 @@
+#!/bin/bash
+
+cd /jsh
+mvn pmd:pmd && cd target/site/ && python3 -m http.server
